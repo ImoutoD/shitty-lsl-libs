@@ -1,0 +1,417 @@
+#ifndef MENU_SYSTEM_LSL_H
+#define MENU_SYSTEM_LSL_H
+
+#include <lists.lsli>
+#include <listen.lsli>
+
+//Multi-User Dialog System Example (With Pagination and input validation) v0.4
+
+//Written in 2011 by MagicPants Resident
+
+//To the extent possible under law, the author(s) have dedicated all copyright and related and 
+//neighboring rights to this software to the public domain worldwide. This software is distributed without any warranty. 
+
+//You should have received a copy of the CC0 Public Domain Dedication along with this software. 
+//If not, see <http://creativecommons.org/publicdomain/zero/1.0/>. 
+
+//Notes:
+
+//I use session_id and user_id interchangeably throughout the script.
+
+
+//Caveats:
+
+//If you have any buttons with the same values as any of the NAV_ buttons, they will
+//be handled as a NAV_ buttons when pressed. If you think there may be collisions,
+//change the values of the NAV_ buttons
+
+//If you are using input validation and the input contains the input separator,
+//the input will be silently ignored. You should change the script to store valid input
+//in a separate strided list or choose a more esoteric separator as a workaround.
+
+/////////////
+//Constants//
+/////////////
+
+//Max number of items to show on a page, defaults to 9 and probably doesn't need changing
+#define ITEMS_PER_PAGE 9
+//Max number of items to show on a single-page main menu, defaults to 12 and probably doesn't need changing
+#define ITEMS_PER_SINGLE_PAGE_MAIN 12
+//Max number of items to show on a row, defaults to 3 and probably doesn't need changing
+#define ITEMS_PER_ROW 3
+
+//returned when a menu won't be displayed
+#define MENU_NONE -1
+//returned when menu display was handled by the response handler
+#define MENU_HANDLED -2
+
+
+///////////////////
+//Dialog Sessions//
+///////////////////
+
+#define SESSION_STRIDE 7
+
+//Stride offsets
+#define SESSION_ID 0
+#define SESSION_HANDLE 1
+#define SESSION_CHANNEL 2
+#define SESSION_MENU 3
+#define SESSION_PAGE 4
+#define SESSION_ACCESSED 5
+#define SESSION_VALID_INPUT 6
+
+//Active dialog sessions
+//Format: key user (sessionid), integer listen_handle, integer listen_channel, 
+//        integer menu_id, integer page, integer last_accessed
+//        string validation_data (may be empty depending on settings)
+list gDialogSessions = [];
+
+integer gNumSessions = 0;
+
+
+/////////////////////
+//Session Handling///
+/////////////////////
+
+//create a new session
+createDialogSession(key user_id)
+{
+    integer channel_id = 0;
+    
+    GEN_RAND_CHAN(channel_id)
+        
+    integer handle_id = llListen(channel_id, "", user_id, "");
+    
+    gDialogSessions = [user_id, handle_id, channel_id, MENU_MAIN, 1, llGetUnixTime(), ""] + gDialogSessions;
+    ++gNumSessions;
+}
+
+//touch the session to update the last active time
+touchDialogSession(integer session_idx)
+{
+    gDialogSessions = llListReplaceList(CLEARABLE_LIST(gDialogSessions), [llGetUnixTime()], 
+                                        session_idx + SESSION_ACCESSED, session_idx + SESSION_ACCESSED);
+}
+
+//remove a session from the sessions list and remove its listen
+endDialogSession(integer session_idx)
+{
+    //get the listen handle for this session and remove the listen
+    llListenRemove(llList2Integer(gDialogSessions, session_idx + SESSION_HANDLE));
+    
+    //remove the session from the session list
+    gDialogSessions = llDeleteSubList(CLEARABLE_LIST(gDialogSessions), session_idx, session_idx + (SESSION_STRIDE -1));
+    
+    --gNumSessions;
+}
+
+//get the index of a session in the list, returns -1 if not found
+integer getSessionIndex(key session_id)
+{
+    integer session_idx;
+    
+    LIST_FIND_STRIDED(gDialogSessions, session_id, SESSION_ID, SESSION_STRIDE, Key, session_idx)
+    
+    return session_idx;
+}
+
+//don't let stale data waste memory! clean it up!
+garbageCollection()
+{
+    integer len = LIST_LEN(gDialogSessions);
+    integer offset = 0;
+
+    integer cutoff_time = llGetUnixTime() - SESSION_TIMEOUT;
+    
+    //remove the session if the last time it was accessed was before the cutoff time
+    while(offset<len)
+    {
+        if(llList2Integer(gDialogSessions, offset + SESSION_ACCESSED) < cutoff_time)
+        {
+            endDialogSession(offset);
+            len -= SESSION_STRIDE;
+        }
+        else
+            offset += SESSION_STRIDE;
+    }
+}
+
+//end all sessions prematurely
+endAllDialogSessions()
+{
+    integer len = LIST_LEN(gDialogSessions);
+    
+    while(len)
+    {
+        endDialogSession(0);
+        len -= SESSION_STRIDE;
+    }
+}
+
+//resume and touch an existing session if one exists, otherwise, start a new one.
+integer sessionStart(key user_id)
+{
+    //check if there's an existing session
+    integer session_idx = getSessionIndex(user_id);
+    
+    //no existing session
+    if(session_idx == -1)
+    {
+        if(gNumSessions >= SESSION_MAX)
+            return -1;
+            
+        //create one
+        createDialogSession(user_id);
+        
+        //when we create a session, it's always the first in the list
+        session_idx = 0;
+    }
+    else
+    {
+        //update this session so it doesn't go stale!
+        touchDialogSession(session_idx);
+    }
+    
+    return session_idx;
+}
+
+
+
+///////////
+//Dialogs//
+///////////
+
+//display a specific menu using our session
+displayDialog(integer session_idx, integer menu_id, list buttons, string message, integer num_of_items)
+{
+    //get the channel number and user key
+    integer channel_id = llList2Integer(gDialogSessions, session_idx + SESSION_CHANNEL);
+    key user_id = llList2Key(gDialogSessions, session_idx + SESSION_ID);
+    
+    //get the last menu we were on
+    integer last_menu_id = llList2Integer(gDialogSessions, session_idx + SESSION_MENU);
+    
+    //the menu changed
+    if(last_menu_id != menu_id)
+    {
+        integer menu_idx = session_idx + SESSION_MENU;
+        integer page_idx = session_idx + SESSION_PAGE;
+        
+        //set the current menu to this one and reset the page number to 1
+        gDialogSessions = llListReplaceList(CLEARABLE_LIST(gDialogSessions), [menu_id, 1], menu_idx, page_idx);
+    }
+    
+    integer auto_paginate = FALSE;
+    
+    if(num_of_items == -1)
+    {
+        auto_paginate = TRUE;
+        num_of_items = LIST_LEN(buttons);
+    }
+        
+    integer num_of_pages = llCeil((float)num_of_items / (float)ITEMS_PER_PAGE);
+    
+    //no items? hrm, fix this up so everything displays properly
+    if(num_of_pages == 0) num_of_pages = 1;
+    
+    //we don't need spacers for a single page main menu, it should have no nav buttons
+    integer need_pages = (num_of_items > ITEMS_PER_SINGLE_PAGE_MAIN || menu_id != MENU_MAIN);
+    
+    //get the current page number
+    integer page_num = llList2Integer(gDialogSessions, session_idx + SESSION_PAGE);
+    
+    //which button index the start of this page is at
+    integer start_idx = (page_num - 1) * ITEMS_PER_PAGE;
+    
+    //only paginate if we have enough items for more than one page
+    if(need_pages && num_of_pages > 1 && auto_paginate)
+    {
+        //do the actual pagination! fit as many buttons as we can for the current page
+        buttons = llList2List(CLEARABLE_LIST(buttons), start_idx, start_idx + ITEMS_PER_PAGE -1);
+    }
+    
+#ifdef USE_SPACERS
+    //this is the last page, we might need to add spacers
+    if(!need_pages || page_num == num_of_pages)
+    {
+        integer i = num_of_items % ITEMS_PER_ROW;
+        
+        //don't add an extra row of spacing :|
+        if(i == 0) i = ITEMS_PER_ROW;
+        
+        while(i++ < ITEMS_PER_ROW) buttons += NAV_SPACER;
+    }
+#endif
+    if(need_pages)
+    {
+        //show the prev button if we're not on the first page
+        if(page_num > 1)
+            buttons += NAV_PREV;
+#ifdef USE_SPACERS
+        else
+            buttons += NAV_SPACER;
+#endif
+    }
+    
+    //show the back button if this isn't the main menu
+    if(menu_id != MENU_MAIN)
+        buttons += NAV_BACK;
+#ifdef USE_SPACERS
+    else if(need_pages)
+        buttons += NAV_SPACER;
+#endif
+    if(need_pages)
+    {
+        //show the next button if there is a next page
+        if(page_num < num_of_pages)
+            buttons += NAV_NEXT;
+#ifdef USE_SPACERS
+        else if(need_pages)
+            buttons += NAV_SPACER;
+#endif
+    }
+    
+    //fix the button order to be in stadard english LTR format (thanks to void singer)
+    buttons = llList2List( buttons, -3, -1 ) + llList2List( buttons, -6, -4 ) +
+              llList2List( buttons, -9, -7 ) + llList2List( buttons, -12, -10 );
+    
+    //store the list of valid buttons for validation later       
+#ifdef VALIDATE_INPUT
+    integer valid_input_idx = session_idx + SESSION_VALID_INPUT;
+    gDialogSessions = llListReplaceList(CLEARABLE_LIST(gDialogSessions), [llDumpList2String(buttons, VALID_INPUT_SEP)], valid_input_idx, valid_input_idx);
+#endif
+    
+    //show the actual dialog
+    llDialog(user_id, message, CLEARABLE_LIST(buttons), channel_id);
+}
+
+displayTextBox(integer session_idx, integer menu_id, string message)
+{
+    //get the channel number and user key
+    integer channel_id = llList2Integer(gDialogSessions, session_idx + SESSION_CHANNEL);
+    key user_id = llList2Key(gDialogSessions, session_idx + SESSION_ID);
+    
+    
+    //get the last menu we were on
+    integer last_menu_id = llList2Integer(gDialogSessions, session_idx + SESSION_MENU);
+    
+    //the menu changed
+    if(last_menu_id != menu_id)
+    {
+        integer menu_idx = session_idx + SESSION_MENU;
+        integer page_idx = session_idx + SESSION_PAGE;
+        
+        //set the current menu to this one and reset the page number to 1 (though it's not used for textboxes)
+        gDialogSessions = llListReplaceList(CLEARABLE_LIST(gDialogSessions), [menu_id, 1], menu_idx, page_idx);
+    }
+    
+#ifdef VALIDATE_INPUT
+    integer valid_input_idx = session_idx + SESSION_VALID_INPUT;
+    gDialogSessions = llListReplaceList(
+        CLEARABLE_LIST(gDialogSessions), 
+        [VALID_INPUT_SEP], 
+        valid_input_idx, 
+        valid_input_idx
+    );
+#endif
+    
+    llTextBox(user_id, message, channel_id);
+}
+
+//handle people pressing the previous and next buttons
+integer handlePrevNextButtons(integer session_idx, string response)
+{
+    if(response != NAV_NEXT && response != NAV_PREV) return FALSE;
+    
+    integer page_idx = session_idx + SESSION_PAGE;
+    
+    integer page_num = llList2Integer(gDialogSessions, page_idx);
+    
+    //add one to the page index if next
+    if(response == NAV_NEXT)
+        ++page_num;
+    //subtract one from the page index if prev
+    else if(response == NAV_PREV)
+        --page_num;
+    
+    //store the new page number    
+    gDialogSessions = llListReplaceList(CLEARABLE_LIST(gDialogSessions), [page_num], page_idx, page_idx);
+    
+    return TRUE;
+}
+
+//try to handle a dialog response, return true if this was meant as a dialog
+//response and was handled, otherwise return false.
+integer handleDialogResponse(integer channel, string name, key id, string message)
+{
+    //try to find our session
+    integer session_idx = getSessionIndex(id);
+    
+    //make sure that this user has a dialog session started
+    if(~session_idx)
+    {
+        //make sure that this was sent over the same channel as our dialog session is using
+        if(channel == llList2Integer(gDialogSessions, session_idx + SESSION_CHANNEL))
+        {
+            //update this session so it doesn't go stale!
+            touchDialogSession(session_idx);
+            
+#ifdef VALIDATE_INPUT
+            //bail out if the valid input separator was in our input
+            if(~llSubStringIndex(message, VALID_INPUT_SEP))
+                return TRUE;
+
+            string validation = llList2String(gDialogSessions, session_idx + SESSION_VALID_INPUT);
+            
+            //are we able to automatically validate this?
+            if(validation != VALID_INPUT_SEP)
+            {
+                //get out of the handler if what was provided wasn't valid input
+                if(llListFindList(llParseString2List(validation, [VALID_INPUT_SEP], []), [message]) == -1)
+                    return TRUE;
+            }
+#endif
+            
+            //check if they pressed a nav button, handle it and return if they did
+            integer redisplay_menu = handlePrevNextButtons(session_idx, message);
+            
+#ifdef USE_SPACERS
+            //spacers aren't valid buttons, we just want menus to redisplay when a spacer is clicked
+            if(message == NAV_SPACER) 
+                redisplay_menu = TRUE;
+#endif
+            
+            //figure out what menu we were on last
+            integer last_menu_id = llList2Integer(gDialogSessions, session_idx + SESSION_MENU);
+            
+            if(last_menu_id != MENU_NONE)
+            {
+                if(redisplay_menu)
+                    showMenu(session_idx, last_menu_id);
+                else
+                {
+                    //send this message (redisplay the last menu if we pressed the prev next or spacer buttons)
+                    integer next_menu = dispatchDialogResponse(session_idx, last_menu_id, message);
+                    
+                    if(next_menu == MENU_NONE)
+                    {
+                        //we're not displaying a dialog, so make sure we change the current menu
+                        integer menu_idx = session_idx + SESSION_MENU;
+                        
+                        gDialogSessions = llListReplaceList(CLEARABLE_LIST(gDialogSessions), [MENU_NONE], menu_idx, menu_idx);
+                    }
+                    else if(next_menu != MENU_HANDLED)
+                        showMenu(session_idx, next_menu);
+                }
+                
+                //get out of the handler, we don't want to process this message any more
+                return TRUE;
+            }
+        }
+        return FALSE;
+    }
+    return FALSE;
+}
+
+#endif

@@ -1,0 +1,16 @@
+#ifndef STRINGS_LSL_H
+#define STRINGS_LSL_H
+
+#include <hacks.lsli>
+
+//use LL-specific optimizations
+#ifdef OPENSIM_UNSAFE
+//  used when we don't need the current str contents after they have been
+//  used in this expression (usually in a function call that will replace 
+//  the str's contents anyways)
+#   define CLEARABLE_STR(_str) (_str="") + _str
+#else
+#   define CLEARABLE_STR(_str) _str
+#endif
+
+#endif

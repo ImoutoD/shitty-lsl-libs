@@ -1,0 +1,58 @@
+#ifndef COLOR_TOOLS_LSL_H
+#define COLOR_TOOLS_LSL_H
+
+vector uRGB2HSL( vector vColRGB ){
+    vector vColHSL = vColRGB;
+    if (vColHSL.x < vColHSL.y){
+        vColHSL = <vColHSL.y, vColHSL.x, vColHSL.z>;
+    }
+    if (vColHSL.x < vColHSL.z){
+        vColHSL = <vColHSL.z, vColHSL.y, vColHSL.x>;
+    }else if (vColHSL.y > vColHSL.z){
+        vColHSL = <vColHSL.x, vColHSL.z, vColHSL.y>;
+    }
+    vColHSL.z = (vColHSL.x + vColHSL.y) * 0.5; //-- L
+    vColHSL.y = vColHSL.x - vColHSL.y;         //-- C
+    if (vColHSL.y){
+        vColHSL.x = llList2Float( [(vColRGB.y - vColRGB.z) / vColHSL.y + 6.0 * (vColRGB.z > vColRGB.y),
+                                   (vColRGB.z - vColRGB.x) / vColHSL.y + 2.0,
+                                   (vColRGB.x - vColRGB.y) / vColHSL.y + 4.0],
+                                  llListFindList( [vColRGB.x, vColRGB.y, vColRGB.z], (list)vColHSL.x  ) ) / 6.0; //-- H
+        vColHSL.y = vColHSL.y / llList2Float( [2.0 * vColHSL.z, 2.0 - 2.0 * vColHSL.z], vColHSL.z > 0.5 );       //-- S
+    }else{
+        vColHSL.x = vColHSL.y; //-- Greyscale
+    }
+    return vColHSL;
+}
+
+vector uHSL2RGB( vector vColHSL ){ //-- <H, S, L>
+    vector vColRGB;
+    if (vColHSL.y){
+        vColRGB.x = (1.0 - llFabs( 2 * vColHSL.z - 1.0 )) * vColHSL.y;                                             //-- C
+        vColHSL.x = vColHSL.x * 6.0;                                                                               //-- H'
+        vColRGB.y = vColRGB.x * (1.0 - llFabs( (integer)vColHSL.x % 2 + (vColHSL.x - (integer)vColHSL.x) - 1.0 )); //-- X 
+        vColRGB = llList2Vector( [<vColRGB.x, vColRGB.y, vColRGB.z>,
+                                 <vColRGB.y, vColRGB.x, vColRGB.z>,
+                                  <vColRGB.z, vColRGB.x, vColRGB.y>,
+                                  <vColRGB.z, vColRGB.y, vColRGB.x>,
+                                  <vColRGB.y, vColRGB.z, vColRGB.x>,
+                                  <vColRGB.x, vColRGB.z, vColRGB.y>],
+                                 (integer)vColHSL.x % 6 ) + (vColHSL.z - 0.5 * vColRGB.x) * <1.0, 1.0, 1.0>;
+    }else{
+        vColRGB.x = vColRGB.y = vColRGB.z = vColHSL.z; //-- greyscale
+    }
+    return vColRGB;
+}
+
+vector changeSaturation(vector clr, float saturation)
+{
+    float intensity = 0.3 * clr.x + 0.59 * clr.y + 0.11 * clr.z;
+    
+    clr.x = intensity * saturation + clr.x * (1 - saturation);
+    clr.y = intensity * saturation + clr.y * (1 - saturation);
+    clr.z = intensity * saturation + clr.z * (1 - saturation);
+    
+    return clr;
+}
+
+#endif

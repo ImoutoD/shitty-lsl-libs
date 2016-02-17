@@ -1,0 +1,115 @@
+#ifndef SIT_MGMT_LSL_H
+#define SIT_MGMT_LSL_H
+
+#include <lists.lsli>
+#include <links.lsli>
+
+list gSittingAgents = [];
+
+integer handleSitChanges(integer find_sit_link)
+{
+    integer sitting_agents = (llGetNumberOfPrims() - llGetObjectPrimCount(llGetKey()));
+    integer prev_sitting_agents = (gSittingAgents != []);
+    
+    //no sit changes, nothing to handle
+    if(sitting_agents == prev_sitting_agents)
+        return FALSE;
+    
+    //someone sat down
+    if(sitting_agents > prev_sitting_agents)
+        handleSit(find_sit_link);
+    //someone stood up
+    else
+        handleUnSit();
+        
+    return TRUE;
+}
+
+//handle an agent standing
+handleUnSit()
+{
+    integer num_links = llGetNumberOfPrims();
+    integer num_prims = llGetObjectPrimCount(llGetKey());
+    
+    //build a list of people currently sitting
+    list curr_agents;
+    while(num_links != num_prims)
+        curr_agents += [llGetLinkKey(num_links--)];
+    
+    integer who_stood = listFindMissingKey(gSittingAgents, curr_agents);
+    
+    //The lists are the same? Someone that wasn't registered as sitting on
+    //us stood up, maybe due to returning FALSE in handleSit.
+    if(who_stood == -1) return;
+    
+    key agent_id = llList2Key(gSittingAgents, who_stood);
+    
+    gSittingAgents = llDeleteSubList(CLEARABLE_LIST(gSittingAgents), who_stood, who_stood);
+    
+    implHandleUnSit(agent_id);
+}
+
+handleSit(integer find_sit_link)
+{
+    key agent_id = llGetLinkKey(llGetNumberOfPrims());
+    
+    integer sit_link = LINK_NONE;
+    
+    //try and find which link the avatar is sitting on
+    if(find_sit_link)
+        sit_link = getAgentSitTargetLink(agent_id);
+    
+    if(implHandleSit(agent_id, sit_link))
+        gSittingAgents += agent_id;
+    else
+        llUnSit(agent_id);
+}
+
+integer getAgentSitTargetLink(key agent_id)
+{
+    //even if the object is a single prim, once an avatar sits on it
+    //the root link number becomes 1 instead of 0
+    integer link = 1;
+    
+    integer prim_count = llGetObjectPrimCount(llGetKey());
+    do
+    {
+        if(llAvatarOnLinkSitTarget(link) == agent_id)
+            return link;
+    }
+    while(link++ < prim_count);
+    
+    return LINK_NONE;
+}
+
+//for when you need to UnSit people without triggering the implementation
+//handlers (e.g. when pose data has been reloaded and nobody's in a pose)
+//or when UnSit handlers need to be triggered synchronously.
+hardUnSit(key agent_id, integer trigger_handler)
+{
+    llUnSit(agent_id);
+    
+    integer agent_idx = llListFindList(gSittingAgents, [agent_id]);
+    
+    //this person wasn't registered as someone allowed to sit on us
+    if(agent_idx != -1)
+    {
+        gSittingAgents = llDeleteSubList(CLEARABLE_LIST(gSittingAgents), agent_idx, agent_idx);
+        
+        if(trigger_handler)
+            implHandleUnSit(agent_id);
+    }
+}
+
+hardUnSitEveryone(integer trigger_handlers)
+{
+    integer linkNums = llGetNumberOfPrims();
+    integer numOfPrims = llGetObjectPrimCount(llGetKey());
+    
+    while(linkNums != numOfPrims)
+    {
+        hardUnSit(llGetLinkKey(linkNums--), trigger_handlers);
+    }
+}
+
+#endif

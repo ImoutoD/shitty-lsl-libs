@@ -1,0 +1,320 @@
+#ifndef HTTP_LIB_LSL_H
+#define HTTP_LIB_LSL_H
+
+/*
+
+A simple library for communicating with a (hopefully not coded in LSL) server
+over HTTP. Supports XTEA encryption along with message integrity checks.
+ 
+escaping instances of the field separator in field isn't done to speed things
+up and save bytecode, this must be done manually for each field that could 
+conceivably contain the field separator.
+
+*/
+
+#include <lists.lsli>
+#include <xtea.lsli>
+#include <api_errors.lsli>
+#include <strings.lsli>
+
+//3 minutes til requests go stale and should
+//be removed from the list
+#ifndef REQUEST_STALE_TIME
+#   define REQUEST_STALE_TIME 180
+#endif
+
+//Stride length for the pending request list
+#define PENDING_REQUEST_STRIDE 6
+
+//Element offsets for each stride
+#define PENDING_REQUEST_ID 0
+#define PENDING_REQUEST_REQUESTER 1
+#define PENDING_REQUEST_METHOD 2
+#define PENDING_REQUEST_TIMESTAMP 3
+#define PENDING_REQUEST_SECURE 4
+//pipe-separated data specific to this method that needs to be kept around
+//'til the response is processed
+#define PENDING_REQUEST_EXTRA 5
+
+
+
+//Mimimum number of elements in a response
+#define RESPONSE_MIN_SIZE 2
+
+//The status code of a response
+#define RESPONSE_STATUS_CODE 0
+//Start index for the parameters of a response
+#define RESPONSE_PARAMS_START 1
+
+#ifndef HTTP_INSECURE_API_HEADER
+#   define HTTP_INSECURE_API_HEADER HTTP_API_HEADER
+#   warning "Using secure API header for insecure API header, please set HTTP_INSECURE_API_HEADER to something sensible!"
+#endif
+
+//Pending requests to the server
+//Format: key request_id, key requested_by, string method, string extra
+//the formatting of the extra field depends on the method
+list gPendingRequests = [];
+
+string packRequest(list params, integer secure)
+{
+    string header;
+    
+    if(secure)
+        header = HTTP_API_HEADER + "|";
+    else
+        header = HTTP_INSECURE_API_HEADER + "|";
+    
+#ifdef CRYPTED_API
+    if(secure)
+    {
+        return xtea_encrypt_string
+        (
+            header + llDumpList2String(CLEARABLE_LIST(params), "|")
+        );
+    }
+    else
+#endif
+    {
+        return header + llDumpList2String(CLEARABLE_LIST(params), "|");
+    }
+}
+
+list unpackResponse(string response, integer secure)
+{
+#ifdef CRYPTED_API
+    if(secure)
+    {
+        return llParseStringKeepNulls(
+            xtea_decrypt_string( CLEARABLE_STR(response) ),
+            ["|"], 
+            []
+        );
+    }
+    else
+#endif
+    {
+        return llParseStringKeepNulls(
+            CLEARABLE_STR(response),
+            ["|"], 
+            []
+        );
+    }
+}
+
+list unpackRequest(string request, integer secure)
+{
+#ifdef CRYPTED_API
+    if(secure)
+    {
+        return llParseStringKeepNulls(
+            xtea_decrypt_string( CLEARABLE_STR(response) ),
+            ["|"], 
+            []
+        );
+    }
+    else
+#endif
+    {
+        return llParseStringKeepNulls(
+            CLEARABLE_STR(response),
+            ["|"], 
+            []
+        );
+    }
+}
+
+//we received an error code from the server, send it out to everyone who needs to see it
+handleResponseError(integer request_index, string method, string error_code, key user_key)
+{
+    //find the index of the error in our list
+    integer error_index = listFindString(ERRORS, error_code, ERROR_CODE, ERROR_STRIDE);
+    
+    //error not found? use the error error!
+    if(error_index == -1) error_index = ERROR_ERROR_INDEX;
+    
+    integer fatal = llList2Integer(ERRORS, error_index + ERROR_FATALITY);
+    
+#ifndef DISABLE_HTTP_ERROR_MESSAGING
+    
+    //get who should receive the message and the message itself
+    integer recipients = llList2Integer(ERRORS, error_index + ERROR_RECIPIENTS);
+    string message = llList2String(ERRORS, error_index + ERROR_MESSAGE);
+    
+    //we tack the error code onto the end of the error error to figure out what error error'd error error.
+    if(error_index == ERROR_ERROR_INDEX)
+        message += error_code;
+        
+    key owner_id = llGetOwner();
+    
+    //don't bother sending a message to the user if the owner or maintainer is the user
+    //and this message isn't just meant for users
+    if(user_key != NULL_KEY && !(recipients != ERROR_FOR_USER && (user_key == owner_id || user_key == MAINTAINER_ID)))
+    {
+        //the user isn't allowed to see this message, send them a generic one
+        if(!(recipients & ERROR_FOR_USER))
+            llRegionSayTo(user_key, 0, llList2String(ERRORS, ERROR_GENERIC_INDEX + ERROR_MESSAGE));
+        else
+            llRegionSayTo(user_key, 0, message);
+    }
+    //send an error message to the owner if this error is for them
+    //don't bother if this message is also meant for maintainers and the owner is the maintainer
+    if(recipients & ERROR_FOR_OWNER && !(recipients & ERROR_FOR_MAINTAINER && owner_id == MAINTAINER_ID))
+        llInstantMessage(owner_id, CLIENT_IDENTIFIER + " " + message);
+    //send an error message to the maintainer if this error is for them
+    if(recipients & ERROR_FOR_MAINTAINER)
+        llInstantMessage(MAINTAINER_ID, CLIENT_IDENTIFIER + " " + message);
+#endif
+
+    implHandleResponseError(request_index, user_key, method, error_code, fatal);
+}
+
+//try to handle an HTTP response, return true if it was an API response and was handled
+//otherwise, return false.
+integer tryHandleAPIResponse(key id, integer status, string body)
+{
+        //find this in the list of requests we've made
+        integer request_index = listFindKey(gPendingRequests, id, PENDING_REQUEST_ID, PENDING_REQUEST_STRIDE);
+        
+        //we can get reponses for requests we didn't make if another script
+        //in the task makes an HTTP request or we made an HTTP request that didn't
+        //originate in serverRequest()
+        if(request_index == -1)
+            return FALSE;
+        
+        //success?
+        if(status >= 200 && status < 300)
+            handleHTTPResponse(request_index, CLEARABLE_STR(body));
+        else
+            handleHTTPRequestError(status, request_index);
+        
+        //everything is handled, remove this request from the list
+        closeHTTPRequest(request_index);
+        
+        return TRUE;
+}
+
+handleHTTPResponse(integer request_index, string body)
+{
+    key user_key = llList2Key(gPendingRequests, request_index + PENDING_REQUEST_REQUESTER);
+    string method = llList2String(gPendingRequests, request_index + PENDING_REQUEST_METHOD);
+    integer secure = llList2Integer(gPendingRequests, request_index + PENDING_REQUEST_SECURE);
+    
+    list response = unpackResponse(CLEARABLE_STR(body), secure);
+    string error_code = "";
+    
+    //this response doesn't look right, too short...
+    if(LIST_LEN(response) < RESPONSE_MIN_SIZE)
+        error_code = "invalid_response";
+    else
+        error_code = llList2String(response, RESPONSE_STATUS_CODE);
+    
+    if(error_code != "success")
+    {
+        //tell everyone who needs to know about this error
+        handleResponseError(request_index, method, error_code, user_key);
+    }
+    else
+    {
+        //now that we're sure there were no (obvious) errors, pass the message off to its handler
+        implHandleHTTPResponse(
+            request_index, 
+            method, 
+            llList2List(CLEARABLE_LIST(response), RESPONSE_PARAMS_START, -1)
+        );
+    }
+}
+
+closeHTTPRequest(integer request_index)
+{
+    gPendingRequests = llDeleteSubList(
+        CLEARABLE_LIST(gPendingRequests),
+        request_index,
+        request_index + (PENDING_REQUEST_STRIDE - 1)
+    );
+}
+
+//we received an HTTP error code from the server while trying to make our request,
+//send it out to everyone who needs to see it
+handleHTTPRequestError(integer status, integer request_index)
+{
+    //now start handling the user end of error handling
+    key user_key = llList2Key(gPendingRequests, request_index + PENDING_REQUEST_REQUESTER);
+    
+#ifndef DISABLE_HTTP_ERROR_MESSAGING
+    string error_message = CLIENT_IDENTIFIER + " encountered an error while communicating with the server. CODE: " + (string)status;
+    
+    //don't IM the owner or maintainer regarding 499 errors if we're not supposed to
+    //most of the time these are things we can't fix.
+#ifdef SILENT_499_ERRORS
+    if(status != 499)
+#endif
+    {
+        //let the maintainer and owner know about the error
+        llInstantMessage(llGetOwner(), error_message);
+        
+        //don't send another copy to the same person!
+        if(llGetOwner() != MAINTAINER_ID)
+            llInstantMessage(MAINTAINER_ID, error_message);
+    }
+#endif
+
+    implHandleHTTPRequestError(request_index, user_key);
+}
+
+//make a request to the server
+//if the vendor is making a request for itself, use NULL_KEY for requested_by
+serverRequest(key requested_by, string method, string extra, list params, integer secure)
+{
+    //pack the request
+    string request = packRequest(CLEARABLE_LIST(params), secure);
+    
+#ifdef HTTP_AUTO_THROTTLE
+    llSleep(1.1- llGetTime());
+    llResetTime();
+#endif
+    
+    //make the request
+    key request_id = llHTTPRequest(API_URL + method, [HTTP_METHOD, "POST", HTTP_VERIFY_CERT, TRUE], CLEARABLE_STR(request));
+    
+    
+    //just treat this like a 499 error
+    if(request_id == NULL_KEY)
+    {
+        handleHTTPRequestError(499, -1);
+    }
+    else
+    {
+        //log the request as a pending request
+        gPendingRequests += [request_id, requested_by, method, llGetUnixTime(), secure, extra];
+    }
+}
+
+//don't let stale data waste memory! clean it up!
+cleanUpRequests()
+{
+    integer len = LIST_LEN(gPendingRequests);
+    integer offset = 0;
+
+    integer cutoff_time = llGetUnixTime() - REQUEST_STALE_TIME;
+    
+    while(offset<len)
+    {
+        if(llList2Integer(gPendingRequests, offset + PENDING_REQUEST_TIMESTAMP) < cutoff_time)
+        {
+            //this request never got a response for some reason, just act as if
+            //we got a 499 error (usually means an issue with LL's infrastructure)
+            handleHTTPRequestError(499, offset);
+            closeHTTPRequest(offset);
+        }
+        else
+            offset += PENDING_REQUEST_STRIDE;
+    }
+}
+
+integer numPendingRequests()
+{
+    return LIST_LEN(gPendingRequests)/PENDING_REQUEST_STRIDE;
+}
+
+#endif

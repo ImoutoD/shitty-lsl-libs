@@ -1,0 +1,21 @@
+#ifndef MENU_SYSTEM_DEFAULTS_LSL_H
+#define MENU_SYSTEM_DEFAULTS_LSL_H
+
+//Whether or not to space out dialogs so nav buttons are always along the bottom row
+#define USE_SPACERS TRUE
+
+//Whether or not to check if the input was in the list of buttons presented to the user
+#define VALIDATE_INPUT TRUE
+
+//Nav button labels
+string NAV_NEXT = ">>"; //next page
+string NAV_PREV = "<<"; //previous page
+string NAV_BACK = "<Back>"; //back one menu
+string NAV_SPACER = "\t\t\t"; //spacer to get button layout right
+
+//Separator for valid data (defaults to an alembic, alchemists may need to change this)
+string VALID_INPUT_SEP = "⚗";
+
+#define MENU_MAIN 0
+
+#endif

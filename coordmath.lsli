@@ -1,0 +1,44 @@
+#ifndef COORDMATH_LSL_H
+#define COORDMATH_LSL_H
+////////////////////////////////////
+//vector / rotation math functions//
+////////////////////////////////////
+
+// Float Linear Interpolation
+#define fLin(_x, _y, _t) ((_x)*(1.-(_t)) + (_y)*(_t))
+
+// Vector Linear Interpolation
+#define vLin(_v0,_v1,_t) ((_v0)*(1.-(_t)) + (_v1)*(_t))
+
+#define DEC_PORTION(_x) (_x - (integer)_x)
+
+// Spherical-Linear Interpolation
+rotation rLin(rotation r0,rotation r1,float t)
+{
+    float ang = llAngleBetween(r0, r1);
+    if( ang > PI) ang -= TWO_PI;
+    return r0 * llAxisAngle2Rot( llRot2Axis(r1/r0)*r0, ang*t);
+}
+
+//convert an object's bounding box to a scale
+vector bbox2Scale(list bbox)
+{
+    return (-llList2Vector(bbox, 0)) + llList2Vector(bbox, 1);
+}
+
+vector scale_2d_vector(vector input, vector scale)
+{
+    return <input.x * scale.x, input.y * scale.y, 0.>;
+}
+
+vector scale_vector(vector input, vector scale)
+{
+    return <input.x * scale.x, input.y * scale.y, input.z * scale.z>;
+}
+
+rotation scale_quat(rotation source, float ratio)
+{
+	return llAxisAngle2Rot(llRot2Axis(source), ratio * llRot2Angle(source));
+}
+
+#endif

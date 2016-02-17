@@ -1,0 +1,26 @@
+#ifndef BOOLEAN_LSL_H
+#define BOOLEAN_LSL_H
+
+#define INVALID_BOOL -1
+
+//convert from a string to a boolean value
+integer str2Bool(string intstr)
+{
+    string lstr = llToLower(intstr);
+    
+    //true / false
+    if(lstr == "true") return TRUE;
+    else if(lstr == "false") return FALSE;
+    
+    //on / off
+    else if(lstr == "on") return TRUE;
+    else if(lstr == "off") return FALSE;
+    
+    //1 / 0
+    else if(lstr == "1") return TRUE;
+    else if(lstr == "0") return FALSE;
+    
+    return INVALID_BOOL;
+}
+
+#endif

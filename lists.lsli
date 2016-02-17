@@ -1,0 +1,116 @@
+#ifndef LISTS_LSL_H
+#define LISTS_LSL_H
+
+#include <hacks.lsli>
+
+//use LL-specific optimizations
+#ifdef OPENSIM_UNSAFE
+#   define LIST_LEN(_list) (_list != [])
+//  used when we don't need the current list contents after they have been
+//  used in this expression (usually in a function call that will replace 
+//  the list's contents anyways)
+#   define CLEARABLE_LIST(_list) (_list=[]) + _list
+#else
+#   define CLEARABLE_LIST(_list) _list
+#   define LIST_LEN(_list) llGetListLength(_list)
+#endif
+
+list StrideOfList(list src, integer stride, integer start, integer end)
+{
+    list l = [];
+    integer ll = LIST_LEN(src);
+    if(start < 0)start += ll;
+    if(end < 0)end += ll;
+    if(end < start) return llList2List(src, start, start);
+    while(start <= end)
+    {
+        l += llList2List(src, start, start);
+        start += stride;
+    }
+    return l;
+}
+
+//example: 
+//  integer index;
+//  //first store the result of function calls in a var when used as any of the params
+//  key owner = llGetOwner();
+//  //check if the owner is a cool person
+//  LIST_FIND_STRIDED(gCoolPeople, owner, 0, 1, Key, index)
+
+#define LIST_FIND_STRIDED(_source, _term, _offset, _stride, _type, _index_out) {\
+integer _len = LIST_LEN(_source); \
+_index_out = _offset; \
+while(_index_out < _len) \
+{ \
+    if(llList2 ## _type(_source, _index_out) == _term) \
+        jump JOIN(term_found_, __LINE__); \
+    _index_out = _index_out + _stride; \
+} \
+_index_out = -1; \
+JOIN(@term_found_, __LINE__) ;}
+
+//function version of the above
+#define LIST_FIND_STRIDED_FUNC(_type, _type_upper) \
+integer listFind ## _type_upper(list source, _type term, integer offset, integer stride){\
+    integer len = LIST_LEN(source); \
+    while(offset < len) \
+    { \
+        if(llList2 ## _type_upper(source, offset) == term) \
+            return offset; \
+        offset += stride; \
+    } \
+    return -1; \
+}
+
+#define LIST_FIND_MISSING_FUNC(_type_upper) \
+integer listFindMissing ## _type_upper(list original, list current) \
+{ \
+    integer i = 0; \
+    integer num_elems = LIST_LEN(original); \
+    while(i < num_elems) \
+    { \
+        if(llListFindList(current, [llList2 ## _type_upper(original, i)]) == -1) \
+            return i; \
+        ++i; \
+    } \
+    return -1; \
+}
+
+#define LIST_FIND_MISSING_MUL_FUNC(_type_upper) \
+list listFindMissingMul ## _type_upper(list original, list current) \
+{ \
+    integer i = 0; \
+    integer num_elems = LIST_LEN(original); \
+    list missing; \
+    while(i < num_elems) \
+    { \
+        if(llListFindList(current, [llList2 ## _type_upper(original, i)]) == -1) \
+            missing += [i]; \
+        ++i; \
+    } \
+    return missing; \
+}
+
+LIST_FIND_STRIDED_FUNC(key, Key)
+LIST_FIND_STRIDED_FUNC(integer, Integer)
+LIST_FIND_STRIDED_FUNC(string, String)
+
+LIST_FIND_MISSING_FUNC(Key)
+LIST_FIND_MISSING_FUNC(Integer)
+LIST_FIND_MISSING_FUNC(String)
+
+LIST_FIND_MISSING_MUL_FUNC(Key)
+LIST_FIND_MISSING_MUL_FUNC(Integer)
+LIST_FIND_MISSING_MUL_FUNC(String)
+
+#define L2I llList2Integer
+#define L2F llList2Float
+#define L2S llList2String
+#define L2K llList2Key
+#define L2R llList2Rot
+#define L2V llList2Vector
+#define L2L llList2List
+#define L2LS llList2ListStrided
+#define PARSE_LIST llParseStringKeepNulls
+
+#endif

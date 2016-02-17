@@ -1,0 +1,24 @@
+#ifndef API_ERRORS_LSL_H
+#define API_ERRORS_LSL_H
+
+//Who an error is meant to be sent to (bitfield)
+#define ERROR_FOR_USER 1
+#define ERROR_FOR_OWNER 2
+#define ERROR_FOR_MAINTAINER 4
+
+//stride length for the error code list
+#define ERROR_STRIDE 4
+
+//element offsets for each stride
+#define ERROR_CODE 0
+#define ERROR_RECIPIENTS 1
+#define ERROR_FATALITY 2
+#define ERROR_MESSAGE 3
+
+//index for the "error error" (assumed to be fatal)
+#define ERROR_ERROR_INDEX 0
+
+//index for the generic message meant for users
+#define ERROR_GENERIC_INDEX 4
+
+#endif

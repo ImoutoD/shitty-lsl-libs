@@ -1,0 +1,58 @@
+#ifndef INVENTORY_LSL_H
+#define INVENTORY_LSL_H
+
+//case insensitive search for an inventory of name <name> and of type <type>
+string iGetInventoryName(string name, integer type)
+{
+    string lname = llToLower(name);
+    string item_name = "";
+    integer items_left = llGetInventoryNumber(type);
+
+    //check each item of <type> to see if the lowercase name is the same as what we are searching for
+    while(items_left)
+    {
+//opensim doesn't seem to like assignments inside other expressions
+#ifdef OPENSIM_UNSAFE
+        if(llToLower(item_name = llGetInventoryName(type, --items_left)) == lname)
+#else
+        item_name = llGetInventoryName(type, --items_left);
+        if(llToLower(item_name) == lname)
+#endif
+            return item_name;
+    }
+    
+    return "";
+}
+
+list getInventoryForDialog(integer type, integer offset, integer limit)
+{
+    integer num_items = llGetInventoryNumber(type);
+    
+    list items;
+    integer i = offset;
+    
+    while(i < limit && i < num_items)
+    {
+        items += [llGetSubString(llGetInventoryName(type, i++), 0, 20)];
+    }
+    
+    return items;
+}
+
+string getInventoryFromDialog(integer type, string message)
+{
+    integer num_items = llGetInventoryNumber(type);
+    
+    integer i;
+    
+    while(i < num_items)
+    {
+        string name = llGetInventoryName(type, i++);
+        if(llGetSubString(name, 0, 20) == message)
+            return name;
+    }
+    
+    return "";
+}
+
+#endif

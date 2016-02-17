@@ -1,0 +1,126 @@
+#ifndef CONFIGSYSTEM_LSL_H
+#define CONFIGSYSTEM_LSL_H
+
+#include <boolean.lsli>
+#include <inventory.lsli>
+#include <strings.lsli>
+
+//Some stupid notecard-based config system v 0.4
+
+//To the extent possible under law, the author(s) have dedicated all copyright and related and 
+//neighboring rights to this software to the public domain worldwide. This software is distributed without any warranty. 
+
+//You should have received a copy of the CC0 Public Domain Dedication along with this software. 
+//If not, see <http://creativecommons.org/publicdomain/zero/1.0/>. 
+
+
+/////////////////////
+//Notecard Handling//
+/////////////////////
+
+integer gCurrNotecardLine = 0;
+key gNotecardHandle = NULL_KEY;
+integer gNotecardReady = FALSE;
+
+string gNotecardName = "";
+key gNotecardKey = NULL_KEY;
+
+
+////////////////
+//Setting vars//
+////////////////
+
+//Whether or not settings have been properly loaded
+integer gSettingsLoaded = FALSE;
+
+///////////////////////////
+//Configuration Functions//
+///////////////////////////
+
+//check if anything has changed with the configuration notecard
+integer isConfigChanged()
+{
+    //the notecard's UUID changed 
+    if(llGetInventoryKey(gNotecardName) != gNotecardKey) return TRUE;
+    //there wasn't a config notecard and now there is
+    if(!gNotecardReady)
+    {
+        if(iGetInventoryName(CONFIG_NAME, INVENTORY_NOTECARD) != "")
+            return TRUE;
+    }
+    
+    return FALSE;
+}
+
+//clear out all of the global variables used for configuration
+unloadConfig()
+{
+    gSettingsLoaded = FALSE;
+    implUnloadConfig();
+    
+    //unload all of our settings
+    resetSettings();
+    
+    //clear out anything related to notecard loading
+    gNotecardReady = FALSE;
+    gNotecardName = "";
+    gNotecardHandle = NULL_KEY;
+    gCurrNotecardLine = 0;
+    
+    configUnloaded();
+}
+
+//load the configuration notecard, warn the user if we're unable to
+loadConfig()
+{
+    //clear out any settings we may have loaded, mark the config as unloaded
+    unloadConfig();
+    
+    //do a case insensitive check for notecards named config
+    string config_card = iGetInventoryName(CONFIG_NAME, INVENTORY_NOTECARD);
+    
+    //hmm, none found
+    if(config_card == "")
+    {
+        configNotFound();
+        
+        return;
+    }
+    
+    configLoading();
+    
+    gNotecardName = config_card;
+    gNotecardKey = llGetInventoryKey(gNotecardName);
+    gNotecardReady = TRUE;
+    
+    //start to read in the configuration notecard
+    gNotecardHandle = llGetNotecardLine(gNotecardName, gCurrNotecardLine++);
+}
+
+handleConfigData(string data)
+{
+    //not the last line?
+    if(data != EOF)
+    {
+        //parse this line and set the relevant vars
+        implProcessConfigLine(CLEARABLE_STR(data));
+        
+        //get the next line
+        gNotecardHandle = llGetNotecardLine(gNotecardName, gCurrNotecardLine++);
+    }
+    else
+    {                
+        //make sure everything was configured properly
+        if(!isConfigComplete())
+        {
+            configLoadFailed();
+            
+            return;
+        }
+        
+        gSettingsLoaded = TRUE;
+        
+        configLoadSuccess();
+    }
+}
+#endif

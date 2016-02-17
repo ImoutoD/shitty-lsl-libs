@@ -1,0 +1,145 @@
+#ifndef SCROLLBAR_LSL_H
+#define SCROLLBAR_LSL_H
+
+#ifndef NUM_SCROLL_ITEMS
+#   error "set NUM_SCROLL_ITEMS"
+#endif
+#ifndef SCROLL_ITEMS_PER_PAGE
+#   error "set SCROLL_ITEMS_PER_PAGE"
+#endif
+#ifndef CURRENT_SCROLL_ITEM
+#   error "set CURRENT_SCROLL_ITEM"
+#endif
+
+#include <links.lsli>
+#include <coordmath.lsli>
+
+integer gScrollBarLink;
+integer gThumbLink;
+integer gScrollDownArrow;
+integer gScrollUpArrow;
+
+float gThumbTopST;
+float gThumbBottomST;
+
+float gThumbTouchDelta;
+
+float gThumbPad;
+vector gThumbPos;
+float gScrollBarBottom;
+float gScrollBarTop;
+
+integer gDragging;
+
+list linkLocalPosAndSize(integer link)
+{
+#ifdef OPENSIM_UNSAFE
+    return llGetLinkPrimitiveParams(link, [PRIM_SIZE, PRIM_POS_LOCAL]);
+#else
+    vector pos=llList2Vector(llGetLinkPrimitiveParams(link,[PRIM_POSITION]),0);
+    pos-=llGetPos();
+    pos/=llGetRot();
+    
+    return llGetLinkPrimitiveParams(link, [PRIM_SIZE]) + [pos];
+#endif
+}
+
+setScrollPos(integer scrollbar_link, integer thumb_link, integer pos)
+{
+    //we shouldn't be able to scroll past the end of a page
+    if(pos > NUM_SCROLL_ITEMS - SCROLL_ITEMS_PER_PAGE)
+        pos = NUM_SCROLL_ITEMS - SCROLL_ITEMS_PER_PAGE;
+    if(pos < 0)
+        pos = 0;
+        
+    CURRENT_SCROLL_ITEM = pos;
+    
+    float num_pages = ((float)NUM_SCROLL_ITEMS/SCROLL_ITEMS_PER_PAGE);
+    if(num_pages < 1.)
+        num_pages = 1.;
+        
+    list scrollbar_props = linkLocalPosAndSize(scrollbar_link);
+    vector scrollbar_size = llList2Vector(scrollbar_props, 0);
+    vector scrollbar_pos = llList2Vector(scrollbar_props, 1);    
+
+    list thumb_props = linkLocalPosAndSize(thumb_link);
+    vector thumb_size = llList2Vector(thumb_props, 0);
+    gThumbPos = llList2Vector(thumb_props, 1);
+    thumb_size.z = scrollbar_size.z / num_pages;
+    
+    gThumbPad = thumb_size.z / 2.;
+    
+    gScrollBarTop = scrollbar_pos.z + (scrollbar_size.z / 2.);
+    gScrollBarBottom = scrollbar_pos.z - (scrollbar_size.z / 2.);
+    
+    float range_top = gScrollBarTop - gThumbPad;
+    float range_bottom = gScrollBarBottom + gThumbPad;
+    
+    if(NUM_SCROLL_ITEMS != 0 && NUM_SCROLL_ITEMS > SCROLL_ITEMS_PER_PAGE)
+        gThumbPos.z = fLin(range_top, range_bottom, pos/(float)(NUM_SCROLL_ITEMS - SCROLL_ITEMS_PER_PAGE));
+    else
+        gThumbPos.z = range_top;
+    
+    float top_dist = gScrollBarTop - gScrollBarBottom;
+    
+    gThumbTopST = ((gThumbPos.z + (thumb_size.z/2.)) - gScrollBarBottom) / top_dist;
+    gThumbBottomST = ((gThumbPos.z - (thumb_size.z/2.)) - gScrollBarBottom) / top_dist;
+    
+    llSetLinkPrimitiveParamsFast(gThumbLink, [PRIM_SIZE, thumb_size, 
+#ifdef OPENSIM_UNSAFE
+    PRIM_POS_LOCAL
+#else
+    PRIM_POSITION
+#endif
+    , gThumbPos]);
+}
+
+//not currently working
+thumbFollowScroll(integer thumb_link, float st_y)
+{
+    float pos =  st_y + gThumbTouchDelta;
+    
+    float new_pos = fLin(gScrollBarBottom, gScrollBarTop, pos);
+    
+    float range_top = gScrollBarTop - gThumbPad;
+    float range_bottom = gScrollBarBottom + gThumbPad;
+    
+    if(new_pos > range_top)
+        new_pos = range_top;
+    if(new_pos < range_bottom)
+        new_pos = range_bottom;
+    
+    gThumbPos.z = new_pos;
+    
+    llSetLinkPrimitiveParamsFast(gThumbLink, [PRIM_POS_LOCAL, gThumbPos]);
+}
+
+//not currently working
+integer getScrollPos(vector st)
+{
+    float percent = 1.-st.y;
+    return (integer)fLin(0, NUM_SCROLL_ITEMS, percent);
+}
+
+integer getClickPos(vector st)
+{
+    float percent = 1.-st.y;
+    return (integer)fLin(-SCROLL_ITEMS_PER_PAGE + 1, NUM_SCROLL_ITEMS+(SCROLL_ITEMS_PER_PAGE/2)-1, percent);
+}
+
+integer isDragging(vector st)
+{
+    return !(st.y > gThumbTopST || st.y < gThumbBottomST);
+}
+
+setupScrollBar()
+{
+    gThumbLink = getLinkNum("ScrollThumb");
+    gScrollBarLink = getLinkNum("ScrollHandler");
+    gScrollUpArrow = getLinkNum("ScrollUpArrow");
+    gScrollDownArrow = getLinkNum("ScrollDownArrow");
+    
+    setScrollPos(gScrollBarLink, gThumbLink, CURRENT_SCROLL_ITEM);
+}
+
+#endif

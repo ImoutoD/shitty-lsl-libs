@@ -1,0 +1,11 @@
+#ifndef LISTEN_LSL_H
+#define LISTEN_LSL_H
+
+#include <integers.lsli>
+
+#define GEN_RAND_CHAN(_channel_var) \
+do { \
+    _channel_var = RAND_32BIT(); \
+} while(!_channel_var);
+
+#endif

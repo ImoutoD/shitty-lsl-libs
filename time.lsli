@@ -1,0 +1,37 @@
+#ifndef TIME_LSL_H
+#define TIME_LSL_H
+
+#define HOURS_OFFSET 13
+#define MINUTES_OFFSET 7
+#define SECONDS_OFFSET 1
+#define TIME_MASK 63
+
+integer clock(float timezone, integer military)
+{
+    // 3600 = seconds in an hour
+    integer raw = (integer)(llGetGMTclock() + (timezone * 3600));
+
+    // 86400 = seconds in 24 hours
+    while(raw >= 86400)
+    {
+        raw -= 86400;
+    }
+    while(raw < 0)
+    {
+        raw += 86400;
+    }
+    
+    integer hours = raw / 3600;
+    integer minutes = (raw % 3600) / 60;
+    integer seconds = raw % 60;
+    integer pm;
+    
+    pm = hours >= 12;
+    
+    while(!military && hours >= 12)
+        hours -= 12;
+    
+    return (hours << HOURS_OFFSET) | (minutes << MINUTES_OFFSET) | (seconds << SECONDS_OFFSET) | pm;
+}
+
+#endif

@@ -1,0 +1,214 @@
+#ifndef LINKS_LSL_H
+#define LINKS_LSL_H
+
+#include <lists.lsli>
+
+#define LINK_NONE -99
+
+#define SET_LPP llSetLinkPrimitiveParamsFast
+#define GET_LPP llGetLinkPrimitiveParams
+
+list gCachedLinkNames = [];
+
+//For whatever reason, a multi-link prim linkset is 0 indexed, a multi-link linkset is 1-indexed
+//fix the link number so the link number works no matter what the situation
+//ALWAYS use for any deserialized link numbers
+integer getRealLinkNum(integer link_num)
+{
+    if(link_num > 1)
+        return link_num;
+    return llGetNumberOfPrims() != 1;
+}
+
+//for similar purposes as above, when storing a link number, store it after running it through
+//this. This way comparisons and list searches don't fail on one-prim objects once avatars sit
+//also good for consistent serialization
+integer getStdLinkNum(integer link_num)
+{
+    if(link_num == 0)
+        return 1;
+    return link_num;
+}
+
+integer getNumberOfPrims()
+{
+    return (llGetObjectPrimCount( llGetKey() ) + llGetNumberOfPrims() * !!llGetAttached());
+}
+
+integer getLinkNum(string link_name)
+{
+    integer prim_count = getNumberOfPrims();
+    
+    integer link = 1;
+    do
+    {
+        if(llGetLinkName(link) == link_name)
+            return link;
+    }
+    while(link++ < prim_count);
+    return LINK_NONE;
+}
+
+integer getRequiredLinkNum(string link_name)
+{
+	integer link_num = getLinkNum(link_name);
+	if(link_num == LINK_NONE)
+	{
+		llOwnerSay("WHOA! Couldn't find a link for " + link_name);
+	}
+	return link_num;
+}
+
+integer getLinkNumOffset(string link_name, integer offset)
+{
+    integer prim_count = getNumberOfPrims();
+    
+    integer link = offset + 1;
+    do
+    {
+        if(llGetLinkName(link) == link_name)
+            return link;
+    }
+    while(link++ < prim_count);
+    return LINK_NONE;
+}
+
+integer getLinkNumCached(string name)
+{
+    integer index;
+    LIST_FIND_STRIDED(gCachedLinkNames, name, 0, 1, String, index);
+    if(~index)
+        return 1 + index;
+    return LINK_NONE;
+    
+}
+
+integer getRequiredLinkNumCached(string link_name)
+{
+	integer link_num = getLinkNumCached(link_name);
+	if(link_num == LINK_NONE)
+	{
+		llOwnerSay("WHOA! Couldn't find a link for " + link_name);
+	}
+	return link_num;
+}
+
+cacheLinkNames()
+{
+    gCachedLinkNames = [];
+    integer prim_count = getNumberOfPrims();
+    
+    integer link = 1;
+    do
+    {
+        gCachedLinkNames += [llGetLinkName(link)];
+    }
+    while(link++ < prim_count);
+}
+
+removeAllSitTargets()
+{
+    integer prims = getNumberOfPrims();
+    
+    integer i;
+    do
+    {
+        llLinkSitTarget(getRealLinkNum(i + 1), ZERO_VECTOR, ZERO_ROTATION);
+    }while(++i < prims);
+}
+
+//face 6 has normal repeats, we can feed this into functions that expect
+//a face number for a five faced prim to get normal repeats / offsets
+#define NOT_FIVE_FACE 6
+
+set5FaceDisplayVisible(integer link_num, integer visible)
+{
+    if(visible)
+    {
+        llSetLinkAlpha(link_num, 1., ALL_SIDES);
+#ifndef MESH_FIVE_FACE
+        llSetLinkAlpha(link_num, 0., 2);
+        llSetLinkAlpha(link_num, 0., 0);
+        llSetLinkAlpha(link_num, 0., 5);
+#endif
+    }
+    else
+        llSetLinkAlpha(link_num, 0., ALL_SIDES);
+}
+
+integer logicalFace25SidedFace(integer index, integer ltr)
+{
+#ifndef MESH_FIVE_FACE
+    if(ltr) 
+        index = 4 - index;
+        
+    if(index == 4) return 3;
+    if(index == 3) return 7;
+    if(index == 2) return 4;
+    if(index == 1) return 6;
+    return 1;
+#else
+    if(!ltr) 
+        index = 4 - index;
+
+    if(index <= 4 && index >= 1) return index;
+    return 0;
+#endif
+}
+
+list get5FaceXRepeatAndOffset(integer five_face)
+{
+    if(five_face == 3)
+        return [2.500, -0.250];
+    if(five_face == 4)
+        return [-16.750, -0.125];
+    if(five_face == 1)
+        return [2.500, 0.250];
+    return [1., 0.];
+}
+
+float wrapOffset(float off)
+{
+    while(off < -1.)
+        off += 2.;
+    while(off > 1.)
+        off -= 2.;
+        
+    return off;
+}
+
+vector cell2Offset(integer cell_num, integer cells_per_row, vector cell_size, vector cell_padding)
+{
+    integer x = (cell_num % cells_per_row) + 1;
+    integer y = (cell_num / cells_per_row) + 1;
+    
+    return <(cell_size.x * x) - (cell_size.x/2. + 0.5) + ((x-1) * cell_padding.x),
+                 -((cell_size.y * y) - (cell_size.y/2. + 0.5)) - ((y-1) * cell_padding.y), 0.>;
+}
+
+list adjustRepeatAndOffsetForFiveFace(integer five_face, vector offset, vector repeat, integer cells_per_row)
+{
+#ifndef MESH_FIVE_FACE
+    list face_data = get5FaceXRepeatAndOffset(five_face);
+    offset.x += (L2F(face_data, 1) * repeat.x);
+
+    if(five_face == 3)
+        offset.x += repeat.x;
+    else if(five_face == 4)
+    {
+        if(!(cells_per_row % 2) || !(cells_per_row % 3))
+            offset.x += repeat.x * 5.;
+        else
+            offset.x -= repeat.x * 2.;
+    }
+    else if(five_face == 1)
+        offset.x -= repeat.x;
+
+    repeat.x *= L2F(face_data, 0);
+    return [ repeat, <wrapOffset(offset.x), wrapOffset(offset.y), 0.>];
+#else
+    return [ repeat, offset ];
+#endif
+}
+
+#endif

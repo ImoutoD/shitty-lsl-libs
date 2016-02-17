@@ -1,0 +1,112 @@
+#ifndef INTEGERS_LSL_H
+#define INTEGERS_LSL_H
+
+#include <hacks.lsli>
+
+#define S32_MAX 2147483647
+#define S32_MIN -2147483648
+
+#define BIT_RANGE(_start, _len) ((~(-1 << (((_len) + (_start)) - (_start))))<<(_start))
+#define BIT_FILL(_len) (~(-1 << _len))
+
+#define CALC_MASK(_field_name) BIT_RANGE(START_NAME(_field_name), LEN_NAME(_field_name))
+
+#define MASK_NAME(_field_name)  JOIN(_field_name, _MASK)
+#define START_NAME(_field_name) JOIN(_field_name, _START)
+#define LEN_NAME(_field_name)   JOIN(_field_name, _LEN)
+
+//get (what I hope is) 32bits worth of entropy
+#define RAND_32BIT() (((integer)llFrand(S32_MAX)) | (((integer)llFrand(2)) << 31))
+
+#define _SET_FIELD(_struct, _start, _mask, _val)    ((_struct) & ~(_mask) | ((_val) << (_start)))
+#define _OR_FIELD(_struct, _start, _val)            ((_struct) | ((_val) << (_start)))
+#define _GET_FIELD(_struct, _start, _mask)          (((_struct) & (_mask)) >> (_start))
+
+#define SET_FIELD(_struct, _field, _val) _SET_FIELD(_struct, START_NAME(_field), MASK_NAME(_field), _val)
+#define GET_FIELD(_struct, _field)       _GET_FIELD(_struct, START_NAME(_field), MASK_NAME(_field))
+#define OR_FIELD(_struct, _field, _val)  _OR_FIELD(_struct, START_NAME(_field), _val)
+
+integer set_field(integer struct, integer start, integer mask, integer val)
+{
+    return _SET_FIELD(struct, start, mask, val);
+}
+
+integer get_field(integer struct, integer start, integer mask)
+{
+    return _GET_FIELD(struct, start, mask);
+}
+
+//the bitwise rotation functions *only* work if bits is less than 32.
+//otherwise, you need to mask the right shift due to the sign bit.
+//bits must be >= by.
+integer bitrot_right(integer num, integer bits, integer by)
+{
+    return (num >> by) | (num & BIT_FILL(by)) << (bits - by);
+}
+
+integer bitrot_left(integer num, integer bits, integer by)
+{
+    by = bits - by;
+    return (num >> by) | (num & BIT_FILL(by)) << (bits - by);
+}
+
+//input: 7, 8, FALSE
+//output: 00000111
+string int2bin(integer int, integer width, integer reverse)
+{
+    string str;
+    
+    //reverse is for display only, it will not be accepted by bin2int
+    if(reverse)
+    {
+        integer i = 0;
+        do
+        {
+            if(int & (1 << i))
+                str += "1";
+            else
+                str += "0";
+        }while(++i < width);
+    }
+    else
+    {
+        width -= 1;
+        do
+        {
+            if(int & (1 << width))
+                str += "1";
+            else
+                str += "0";
+        }
+        while(width-- > 0);
+    }
+    
+    return str;
+}
+
+//input: 00000111
+//output: 7
+integer bin2int(string str)
+{
+    integer strlen = llStringLength(str);
+    
+    if(!strlen) return 0;
+    
+    strlen -= 1;
+    
+    integer i = 0;
+    integer int = 0;
+    
+    do
+    {
+        //we read the string from right to left
+        integer index = strlen-i;
+        if(llGetSubString(str,index,index) == "1")
+            int = int | (1 << i);
+    }
+    while(i++ < strlen);
+    
+    return int;
+}
+
+#endif

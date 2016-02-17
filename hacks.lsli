@@ -1,0 +1,56 @@
+#ifndef LAME_HACKS_LSL_H
+#define LAME_HACKS_LSL_H
+
+//hmm, the preprocessor complains when we try use the SA var types as macro args, do it this way
+#define V(_x, _y , _z) <_x, _y, _z>
+#define R(_x, _y , _z, _s) <_x, _y, _z, _s>
+#define L(...) [__VA_ARGS__]
+
+//use this when you hate the spaces that the preprocessor automagically puts between tokens
+#define JOIN(_a, _b) JOIN1(_a, _b)
+#define JOIN1(_a, _b) JOIN2(_a, _b)
+#define JOIN2(_a, _b) _a ## _b
+
+//used for putting a set of macros between quotes
+#define QUOTE(...) QUOTE1(__VA_ARGS__)
+#define QUOTE1(...) QUOTE2(__VA_ARGS__)
+#define QUOTE2(...) #__VA_ARGS__
+
+//used for iterating over a list of arguments for a single-argument macro
+//example: FOR_EACH(PACK_RPC_STRING_LIST, foo, bar, baz)
+#define FOR_EACH_1(what, x, ...) what(x)
+#define FOR_EACH_2(what, x, ...)\
+  what(x)\
+  FOR_EACH_1(what,  __VA_ARGS__)
+#define FOR_EACH_3(what, x, ...)\
+  what(x)\
+  FOR_EACH_2(what, __VA_ARGS__)
+#define FOR_EACH_4(what, x, ...)\
+  what(x)\
+  FOR_EACH_3(what,  __VA_ARGS__)
+#define FOR_EACH_5(what, x, ...)\
+  what(x)\
+  FOR_EACH_4(what,  __VA_ARGS__)
+#define FOR_EACH_6(what, x, ...)\
+  what(x)\
+  FOR_EACH_5(what,  __VA_ARGS__)
+#define FOR_EACH_7(what, x, ...)\
+  what(x)\
+  FOR_EACH_6(what,  __VA_ARGS__)
+#define FOR_EACH_8(what, x, ...)\
+  what(x)\
+  FOR_EACH_7(what,  __VA_ARGS__)
+
+#define FOR_EACH_NARG(...) FOR_EACH_NARG_(__VA_ARGS__, FOR_EACH_RSEQ_N())
+#define FOR_EACH_NARG_(...) FOR_EACH_ARG_N(__VA_ARGS__) 
+#define FOR_EACH_ARG_N(_1, _2, _3, _4, _5, _6, _7, _8, N, ...) N 
+#define FOR_EACH_RSEQ_N() 8, 7, 6, 5, 4, 3, 2, 1, 0
+
+#define FOR_EACH_(N, what, x, ...) JOIN(FOR_EACH_, N)(what, x, __VA_ARGS__)
+#define FOR_EACH(what, x, ...) FOR_EACH_(FOR_EACH_NARG(x, __VA_ARGS__), what, x, __VA_ARGS__)
+
+//this should work on any platform that supports the bitwise not operator
+//(hopefully all of them)
+#define NOT_NEG_ONE(_expr) (~(_expr))
+
+#endif

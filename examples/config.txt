@@ -1,0 +1,13 @@
+# Example Configuration Notecard
+#
+# The # symbol at the beginning of the line marks the line as usable
+# for human-readable comments
+#
+# The rest of the notecard is made up of key=value pairs.
+
+ANiceBool = False
+ANiceVector = <1., 0., 3.>
+ANiceString = asadadadasds
+
+#This is an optional setting, remove the # before the line to enable it
+#AnOptionalInteger = 22

@@ -1,0 +1,67 @@
+#ifndef KEYVALUE_CONFIG_SYSTEM_LSL_H
+#define KEYVALUE_CONFIG_SYSTEM_LSL_H
+
+//A simple key=value config system provided as an example of how to
+//write a config file parser
+
+#include <configsystem.lsli>
+#include <lists.lsli>
+
+list gConfiguredSettings;
+
+implUnloadConfig()
+{
+    gConfiguredSettings = [];
+}
+
+//parse a line from a config notecard and handle it accordingly
+implProcessConfigLine(string config_line)
+{
+    integer assign_pos = llSubStringIndex(config_line, "=");
+    
+    //no assignment operator on this line, bail out.
+    if(assign_pos == -1) return;
+    
+    //don't process the line if it starts with the comment char
+    if(llSubStringIndex(llStringTrim(config_line, STRING_TRIM_HEAD), "#") == 0) return;
+    
+    //parse out the key
+    string akey = llToLower(llStringTrim(llGetSubString(config_line, 0, assign_pos - 1), STRING_TRIM));
+    
+    //parse out the value (if trailing and leading whitespace are important to you this NEEDS to be changed)
+    string value = llStringTrim(llGetSubString(config_line, assign_pos + 1, -1), STRING_TRIM);
+    
+    //nothing is actually assigned, make sure value is null
+    if(assign_pos + 1 == llStringLength(config_line)) 
+        value = "";
+    
+    //store this in the string of config vars that have been set
+    gConfiguredSettings = CLEARABLE_LIST(gConfiguredSettings) + [akey];
+    
+    //handle assigning the config vars
+    assignConfigVar(akey, value);
+}
+
+//check if all of the required configuration vars are set
+integer areRequiredSettingsSet()
+{
+    integer num_of_settings = LIST_LEN(REQUIRED_SETTINGS);
+    integer i = 0;
+    
+    while(i < num_of_settings)
+    {
+        //return false if the var wasn't set
+        if(!isSettingSet(llList2String(REQUIRED_SETTINGS, i++)))
+            return FALSE;
+    }
+    
+    //everything must have been found
+    return TRUE;
+}
+
+integer isSettingSet(string setting)
+{
+    return ~llListFindList(gConfiguredSettings, [llToLower(setting)]);
+}
+
+#endif
