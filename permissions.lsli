@@ -1,0 +1,34 @@
+#ifndef PERMISSIONS_LSL_H
+#define PERMISSIONS_LSL_H
+
+
+integer canPushAt(vector p) {
+    if (llGetRegionFlags() & REGION_FLAG_RESTRICT_PUSHOBJECT) {
+        return FALSE; //Region doesn't allow push
+    }
+    if (llGetParcelFlags(p) & PARCEL_FLAG_RESTRICT_PUSHOBJECT) {
+        return FALSE; //Parcel doesn't allow push
+    }
+    return TRUE; //Parcel and region allows push
+}
+
+integer canRezAt(vector p) {
+    integer pflags = llGetParcelFlags(p);
+    if (pflags & PARCEL_FLAG_ALLOW_CREATE_OBJECTS) {
+        return TRUE;
+    }
+    if (pflags & PARCEL_FLAG_ALLOW_CREATE_GROUP_OBJECTS) {
+        list ls = llGetParcelDetails(p, [PARCEL_DETAILS_GROUP]);
+        if (ls == []) {
+            return FALSE;
+        }
+        key parcelGroupKey = llList2Key(ls, 0);
+        if (llSameGroup(parcelGroupKey)) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+
+#endif
