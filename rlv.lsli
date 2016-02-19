@@ -1,0 +1,44 @@
+#ifndef RLV_LSL_H
+#define RLV_LSL_H
+
+#include <lists.lsli>
+
+//RLV Channel
+#define RLVRS -1812221819
+
+//send a rlv command to the owner
+#define sendRLVCommand(_cmd) llOwnerSay(_cmd)
+
+//send a relay command to the rlv_user key.
+sendRLVRelayCommand(string command_name, key rlv_user, string rlv_command) {
+    llRegionSayTo(rlv_user, RLVRS, command_name + "," + (string)rlv_user + "," + rlv_command);
+}
+
+//send a relay command first renaming itself to the name of the rlv_user.
+sendStealthRLVRelayCommand(string command_name, key rlv_user, string rlv_command) {
+    string object_name = llGetObjectName();
+    llSetObjectName(llKey2Name(rlv_user));
+    sendRLVRelayCommand(command_name, rlv_user, rlv_command);
+    llSetObjectName(object_name);
+}
+
+//send a relay command to a list of users
+sendRLVRelayCommandToUsers(string command_name, list rlv_users, string rlv_command) {
+    integer i;
+    integer len = LIST_LEN(rlv_users);
+    for (i = 0; i < len; i++) {
+        sendRLVRelayCommand(command_name, L2K(rlv_users, i), rlv_command);
+    }
+}
+
+//send a stealth relay command to a list of users
+sendStealthRLVRelayCommandToUsers(string command_name, list rlv_users, string rlv_command) {
+    integer i;
+    integer len = LIST_LEN(rlv_users);
+    for (i = 0; i < len; i++) {
+        sendStealthRLVRelayCommand(command_name, L2K(rlv_users, i), rlv_command);
+    }
+}
+
+
+#endif
